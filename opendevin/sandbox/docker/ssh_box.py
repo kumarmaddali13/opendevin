@@ -111,7 +111,6 @@ class DockerSSHBox(Sandbox):
             raise Exception(f'Failed to run command in sandbox: {cmd}\n{logs}')
         return exit_code, logs
 
-
     def setup_user(self):
         # Make users sudoers passwordless
         self._run_setup_command(r"echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers", must=True)
@@ -126,7 +125,7 @@ class DockerSSHBox(Sandbox):
             self._run_setup_command(f'useradd -rm -d /home/opendevin -s /bin/bash -g root -G sudo -u {USER_ID} opendevin', must=True)
             self._run_setup_command(f"echo 'opendevin:{self._ssh_password}' | chpasswd", must=True)
 
-            self._run_setup_command(f'chown opendevin:root /home/opendevin', must=True)
+            self._run_setup_command('chown opendevin:root /home/opendevin', must=True)
             self._run_setup_command(f'chown opendevin:root {SANDBOX_WORKSPACE_DIR}', must=True)
         else:
             self._run_setup_command(f'echo "root:{self._ssh_password}" | chpasswd', must=True)
@@ -345,7 +344,7 @@ class DockerSSHBox(Sandbox):
             self.container = self.docker_client.containers.run(
                 self.container_image,
                 # allow root login
-                command=f"/bin/bash -c 'while true; do sleep 1000; done'",
+                command="/bin/bash -c 'while true; do sleep 1000; done'",
                 **network_kwargs,
                 working_dir=SANDBOX_WORKSPACE_DIR,
                 name=self.container_name,
@@ -411,7 +410,7 @@ if __name__ == '__main__':
 
     # Initialize required plugins
     print("init plugins...")
-    ssh_box.init_plugins([SSHRequirement(), JupyterRequirement(), SWEAgentCommandsRequirement()])
+    ssh_box.init_plugins([JupyterRequirement(), SWEAgentCommandsRequirement()])
     print("initted plugins!!!")
     logger.info(
         '--- SWE-AGENT COMMAND DOCUMENTATION ---\n'

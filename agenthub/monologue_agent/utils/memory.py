@@ -1,5 +1,4 @@
 import llama_index.embeddings.openai.base as llama_openai
-from threading import Thread
 
 import chromadb
 from llama_index.core import Document

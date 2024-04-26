@@ -16,3 +16,5 @@ echo 'source /opendevin/plugins/swe_agent_commands/edit_linting.sh' >> ~/.bashrc
 echo 'export SWE_CMD_WORK_DIR="/opendevin/plugins/swe_agent_commands/workdir"' >> ~/.bashrc
 sudo mkdir -p /opendevin/plugins/swe_agent_commands/workdir
 sudo chmod 777 /opendevin/plugins/swe_agent_commands/workdir
+
+source ~/.bashrc
