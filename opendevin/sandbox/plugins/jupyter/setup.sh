@@ -2,6 +2,22 @@
 
 set -e
 
+echo "installing python"
+if which apt; then
+    echo "via apt"
+    apt update
+    apt install -y python3 python3-pip
+    echo "done"
+elif which yum; then
+    yum install -y python3 python3-pip
+elif which apk; then
+    apk upgrade
+    apk add --no-cache python3 py3-pip
+else
+    echo "No package manager found"
+    exit 1
+fi
+
 # ADD /opendevin/plugins to PATH to make `jupyter_cli` available
 echo 'export PATH=$PATH:/opendevin/plugins/jupyter' >> ~/.bashrc
 export PATH=/opendevin/plugins/jupyter:$PATH

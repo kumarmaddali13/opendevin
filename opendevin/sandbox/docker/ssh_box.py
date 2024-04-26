@@ -16,7 +16,7 @@ from opendevin.logger import opendevin_logger as logger
 from opendevin.sandbox.sandbox import Sandbox
 from opendevin.sandbox.process import Process
 from opendevin.sandbox.docker.process import DockerProcess
-from opendevin.sandbox.plugins import JupyterRequirement, SWEAgentCommandsRequirement
+from opendevin.sandbox.plugins import SSHRequirement, JupyterRequirement, SWEAgentCommandsRequirement
 from opendevin.schema import ConfigType
 from opendevin.utils import find_available_tcp_port
 from opendevin.exceptions import SandboxInvalidBackgroundCommandError
@@ -88,86 +88,54 @@ class DockerSSHBox(Sandbox):
         self.restart_docker_container()
 
         self.setup_user()
+        print('setting up ssh')
+
+        self.init_plugins([SSHRequirement()])
+        print('starting ssh session')
         self.start_ssh_session()
         atexit.register(self.close)
 
-    def setup_user(self):
-
-        # Make users sudoers passwordless
-        # TODO(sandbox): add this line in the Dockerfile for next minor version of docker image
-        exit_code, logs = self.container.exec_run(
-            ['/bin/bash', '-c',
-             r"echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers"],
-            workdir=SANDBOX_WORKSPACE_DIR,
-        )
-        if exit_code != 0:
-            raise Exception(
-                f'Failed to make all users passwordless sudoers in sandbox: {logs}')
-
-        # Check if the opendevin user exists
-        exit_code, logs = self.container.exec_run(
-            ['/bin/bash', '-c', 'id -u opendevin'],
-            workdir=SANDBOX_WORKSPACE_DIR,
-        )
-        if exit_code == 0:
-            # User exists, delete it
-            exit_code, logs = self.container.exec_run(
-                ['/bin/bash', '-c', 'userdel -r opendevin'],
+    def _run_setup_command(self, cmd, must=False, background=False):
+        if background:
+            return self.container.exec_run(
+                ['/bin/bash', '-c', cmd],
+                socket=True,
                 workdir=SANDBOX_WORKSPACE_DIR,
             )
-            if exit_code != 0:
-                raise Exception(
-                    f'Failed to remove opendevin user in sandbox: {logs}')
+        exit_code, logs = self.container.exec_run(
+            ['/bin/bash', '-c', cmd],
+            socket=background,
+            workdir=SANDBOX_WORKSPACE_DIR,
+        )
+        if must and exit_code != 0:
+            raise Exception(f'Failed to run command in sandbox: {cmd}\n{logs}')
+        return exit_code, logs
+
+
+    def setup_user(self):
+        # Make users sudoers passwordless
+        self._run_setup_command(r"echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers", must=True)
+
+        exit_code, logs = self._run_setup_command("id -u opendevin")
+        if exit_code == 0:
+            # User exists, delete it
+            self._run_setup_command("userdel -r opendevin", must=True)
 
         if RUN_AS_DEVIN:
             # Create the opendevin user
-            exit_code, logs = self.container.exec_run(
-                ['/bin/bash', '-c',
-                 f'useradd -rm -d /home/opendevin -s /bin/bash -g root -G sudo -u {USER_ID} opendevin'],
-                workdir=SANDBOX_WORKSPACE_DIR,
-            )
-            if exit_code != 0:
-                raise Exception(
-                    f'Failed to create opendevin user in sandbox: {logs}')
-            exit_code, logs = self.container.exec_run(
-                ['/bin/bash', '-c',
-                 f"echo 'opendevin:{self._ssh_password}' | chpasswd"],
-                workdir=SANDBOX_WORKSPACE_DIR,
-            )
-            if exit_code != 0:
-                raise Exception(f'Failed to set password in sandbox: {logs}')
+            self._run_setup_command(f'useradd -rm -d /home/opendevin -s /bin/bash -g root -G sudo -u {USER_ID} opendevin', must=True)
+            self._run_setup_command(f"echo 'opendevin:{self._ssh_password}' | chpasswd", must=True)
 
-            # chown the home directory
-            exit_code, logs = self.container.exec_run(
-                ['/bin/bash', '-c', 'chown opendevin:root /home/opendevin'],
-                workdir=SANDBOX_WORKSPACE_DIR,
-            )
-            if exit_code != 0:
-                raise Exception(
-                    f'Failed to chown home directory for opendevin in sandbox: {logs}')
-            exit_code, logs = self.container.exec_run(
-                ['/bin/bash', '-c', f'chown opendevin:root {SANDBOX_WORKSPACE_DIR}'],
-                workdir=SANDBOX_WORKSPACE_DIR,
-            )
-            if exit_code != 0:
-                raise Exception(
-                    f'Failed to chown workspace directory for opendevin in sandbox: {logs}')
+            self._run_setup_command(f'chown opendevin:root /home/opendevin', must=True)
+            self._run_setup_command(f'chown opendevin:root {SANDBOX_WORKSPACE_DIR}', must=True)
         else:
-            exit_code, logs = self.container.exec_run(
-                # change password for root
-                ['/bin/bash', '-c',
-                 f"echo 'root:{self._ssh_password}' | chpasswd"],
-                workdir=SANDBOX_WORKSPACE_DIR,
-            )
-            if exit_code != 0:
-                raise Exception(
-                    f'Failed to set password for root in sandbox: {logs}')
-        exit_code, logs = self.container.exec_run(
-            ['/bin/bash', '-c', "echo 'opendevin-sandbox' > /etc/hostname"],
-            workdir=SANDBOX_WORKSPACE_DIR,
-        )
+            self._run_setup_command(f'echo "root:{self._ssh_password}" | chpasswd', must=True)
+        self._run_setup_command("echo 'opendevin-sandbox' > /etc/hostname", must=True)
 
     def start_ssh_session(self):
+        print("running sshd")
+        self._run_setup_command(f"/usr/sbin/sshd -D -p {self._ssh_port} -o 'PermitRootLogin=yes'", background=True)
+        time.sleep(5)
         # start ssh session at the background
         self.ssh = pxssh.pxssh()
         hostname = SSH_HOSTNAME
@@ -201,6 +169,8 @@ class DockerSSHBox(Sandbox):
         return bg_cmd.read_logs()
 
     def execute(self, cmd: str) -> Tuple[int, str]:
+        if not hasattr(self, 'ssh'):
+            return self._run_setup_command(cmd)
         cmd = cmd.strip()
         # use self.ssh
         self.ssh.sendline(cmd)
@@ -375,7 +345,7 @@ class DockerSSHBox(Sandbox):
             self.container = self.docker_client.containers.run(
                 self.container_image,
                 # allow root login
-                command=f"/usr/sbin/sshd -D -p {self._ssh_port} -o 'PermitRootLogin=yes'",
+                command=f"/bin/bash -c 'while true; do sleep 1000; done'",
                 **network_kwargs,
                 working_dir=SANDBOX_WORKSPACE_DIR,
                 name=self.container_name,
@@ -440,7 +410,9 @@ if __name__ == '__main__':
         "Interactive Docker container started. Type 'exit' or use Ctrl+C to exit.")
 
     # Initialize required plugins
-    ssh_box.init_plugins([JupyterRequirement(), SWEAgentCommandsRequirement()])
+    print("init plugins...")
+    ssh_box.init_plugins([SSHRequirement(), JupyterRequirement(), SWEAgentCommandsRequirement()])
+    print("initted plugins!!!")
     logger.info(
         '--- SWE-AGENT COMMAND DOCUMENTATION ---\n'
         f'{SWEAgentCommandsRequirement().documentation}\n'

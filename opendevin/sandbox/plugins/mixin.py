@@ -37,3 +37,4 @@ class PluginMixin:
             if exit_code != 0:
                 raise RuntimeError(f'Failed to source ~/.bashrc with exit code {exit_code} and output {output}')
             logger.info('Sourced ~/.bashrc successfully')
+        print("done init plugins")
