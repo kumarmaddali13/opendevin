@@ -82,7 +82,7 @@ def swe_agent_edit_hack(bash_command: str) -> str:
             r'edit\s(\d+):(\d+)([\s\S]*?)end_of_edit',
             r'edit \1:\2 <<EOF\3EOF',
             bash_command,
-        )
+        ).rstrip()
     return bash_command
 
 
