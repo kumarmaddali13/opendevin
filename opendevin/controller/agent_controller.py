@@ -54,7 +54,7 @@ class AgentController:
         sid: str = 'default',
         max_iterations: int = MAX_ITERATIONS,
         max_chars: int = MAX_CHARS,
-        inputs: dict | None = None,
+        initial_state: State | None = None,
     ):
         """Initializes a new instance of the AgentController class.
 
@@ -64,17 +64,20 @@ class AgentController:
             sid: The session ID of the agent.
             max_iterations: The maximum number of iterations the agent can run.
             max_chars: The maximum number of characters the agent can output.
-            inputs: The initial inputs to the agent.
+            initial_state: The initial state of the controller.
         """
         self.id = sid
         self.agent = agent
-        self.state = State(inputs=inputs or {}, max_iterations=max_iterations)
+        self.max_iterations = max_iterations
+        self.max_chars = max_chars
+        if initial_state is None:
+            self.state = State(inputs={}, max_iterations=max_iterations)
+        else:
+            self.state = initial_state
         self.event_stream = event_stream
         self.event_stream.subscribe(
             EventStreamSubscriber.AGENT_CONTROLLER, self.on_event
         )
-        self.max_iterations = max_iterations
-        self.max_chars = max_chars
         self.agent_task = asyncio.create_task(self._start_step_loop())
 
     async def close(self):
@@ -168,14 +171,23 @@ class AgentController:
     async def start_delegate(self, action: AgentDelegateAction):
         AgentCls: Type[Agent] = Agent.get_cls(action.agent)
         agent = AgentCls(llm=self.agent.llm)
+        state = State(
+            inputs=action.inputs or {},
+            iteration=self.state.iteration,
+            max_iterations=self.max_iterations,
+            num_of_chars=self.state.num_of_chars,
+            # TODO: the delegate probably doesn't need to know the full history
+            history=self.state.history,
+        )
         self.delegate = AgentController(
             sid=self.id + '-delegate',
             agent=agent,
             event_stream=self.event_stream,
             max_iterations=self.max_iterations,
             max_chars=self.max_chars,
-            inputs=action.inputs,
+            initial_state=state,
         )
+        await self.delegate.set_agent_state_to(AgentState.RUNNING)
 
     async def _step(self):
         if self.get_agent_state() != AgentState.RUNNING:
@@ -188,24 +200,45 @@ class AgentController:
             await asyncio.sleep(1)
             return
 
-        logger.info(f'STEP {self.state.iteration}', extra={'msg_type': 'STEP'})
-        if self.state.iteration >= self.max_iterations:
-            await self.report_error('Agent reached maximum number of iterations')
-            await self.set_agent_state_to(AgentState.ERROR)
-            return
-
         if self.delegate is not None:
-            delegate_done = await self.delegate._step()
+            await self.delegate._step()
+            delegate_state = self.delegate.get_agent_state()
+            if delegate_state == AgentState.ERROR:
+                # close the delegate upon error
+                await self.delegate.close()
+                await self.report_error('Delegator agent encounters an error')
+                # propagate error state until an agent or user can handle it
+                await self.set_agent_state_to(AgentState.ERROR)
+                return
+            delegate_done = delegate_state == AgentState.FINISHED
             if delegate_done:
+                # retrieve delegate result
                 outputs = self.delegate.state.outputs if self.delegate.state else {}
+
+                # update current controller's state
+                self.state.iteration = self.delegate.state.iteration
+                self.state.num_of_chars = self.delegate.state.num_of_chars
+
+                # close delegate controller: we must close the delegate controller before adding new events
+                await self.delegate.close()
+
+                # update delegate result observation
                 obs: Observation = AgentDelegateObservation(content='', outputs=outputs)
                 await self.event_stream.add_event(obs, EventSource.AGENT)
+
+                # clean up delegate status
                 self.delegate = None
                 self.delegateAction = None
             return
 
         if self.state.num_of_chars > self.max_chars:
             raise MaxCharsExceedError(self.state.num_of_chars, self.max_chars)
+
+        logger.info(f'STEP {self.state.iteration}', extra={'msg_type': 'STEP'})
+        if self.state.iteration >= self.max_iterations:
+            await self.report_error('Agent reached maximum number of iterations')
+            await self.set_agent_state_to(AgentState.ERROR)
+            return
 
         self.update_state_before_step()
         action: Action = NullAction()
@@ -268,3 +301,11 @@ class AgentController:
                 return True
 
         return False
+
+    def __repr__(self):
+        return (
+            f'AgentController(id={self.id}, agent={self.agent!r}, '
+            f'event_stream={self.event_stream!r}, '
+            f'state={self.state!r}, agent_task={self.agent_task!r}, '
+            f'delegate={self.delegate!r}, _pending_action={self._pending_action!r})'
+        )

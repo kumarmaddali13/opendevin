@@ -35,7 +35,9 @@ def history_to_json(obj, **kwargs):
         # process history, make it simpler.
         processed_history = []
         for action, observation in obj:
-            processed_history.append((event_to_memory(action), event_to_memory(observation)))
+            processed_history.append(
+                (event_to_memory(action), event_to_memory(observation))
+            )
         return json.dumps(processed_history, **kwargs)
 
 
@@ -53,6 +55,7 @@ class MicroAgent(Agent):
 
     def step(self, state: State) -> Action:
         latest_user_message = state.get_current_user_intent()
+        assert latest_user_message is not None
         prompt = self.prompt_template.render(
             state=state,
             instructions=instructions,
