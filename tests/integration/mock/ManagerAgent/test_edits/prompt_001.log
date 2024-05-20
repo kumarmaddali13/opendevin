@@ -13,8 +13,28 @@ provide the correct inputs for the delegate you select.
 
 ## Agents
 
-### TypoFixerAgent
-Fixes typos in files in the current working directory
+### CoderAgent
+Given a particular task, and a detailed description of the codebase, accomplishes the task
+#### Inputs
+{"task": "string", "codebase_summary": "string"}
+
+### CommitWriterAgent
+Write a git commit message for files in the git staging area
+#### Inputs
+{}
+
+### MathAgent
+Solves simple and complex math problems using python
+#### Inputs
+{"task": "string"}
+
+### PostgresAgent
+Writes and maintains PostgreSQL migrations
+#### Inputs
+{"task": "string"}
+
+### RepoExplorerAgent
+Generates a detailed summary of an existing codebase
 #### Inputs
 {}
 
@@ -23,33 +43,13 @@ Given a particular task, finds and describes all relevant parts of the codebase
 #### Inputs
 {"task": "string"}
 
-### MathAgent
-Solves simple and complex math problems using python
-#### Inputs
-{"task": "string"}
-
-### CommitWriterAgent
-Write a git commit message for files in the git staging area
-#### Inputs
-{}
-
-### RepoExplorerAgent
-Generates a detailed summary of an existing codebase
+### TypoFixerAgent
+Fixes typos in files in the current working directory
 #### Inputs
 {}
 
 ### VerifierAgent
 Given a particular task, verifies that the task has been completed
-#### Inputs
-{"task": "string"}
-
-### CoderAgent
-Given a particular task, and a detailed description of the codebase, accomplishes the task
-#### Inputs
-{"task": "string", "codebase_summary": "string"}
-
-### PostgresAgent
-Writes and maintains PostgreSQL migrations
 #### Inputs
 {"task": "string"}
 
