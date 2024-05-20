@@ -1,0 +1,79 @@
+
+
+----------
+
+# Task
+You are in charge of accomplishing the following task:
+Fix typos in bad.txt. Do not ask me for confirmation at any point.
+
+In order to accomplish this goal, you must delegate tasks to one or more agents, who
+can do the actual work. A description of each agent is provided below. You MUST
+select one of the delegates below to move towards accomplishing the task, and you MUST
+provide the correct inputs for the delegate you select.
+
+## Agents
+
+### TypoFixerAgent
+Fixes typos in files in the current working directory
+#### Inputs
+{}
+
+### StudyRepoForTaskAgent
+Given a particular task, finds and describes all relevant parts of the codebase
+#### Inputs
+{"task": "string"}
+
+### MathAgent
+Solves simple and complex math problems using python
+#### Inputs
+{"task": "string"}
+
+### CommitWriterAgent
+Write a git commit message for files in the git staging area
+#### Inputs
+{}
+
+### RepoExplorerAgent
+Generates a detailed summary of an existing codebase
+#### Inputs
+{}
+
+### VerifierAgent
+Given a particular task, verifies that the task has been completed
+#### Inputs
+{"task": "string"}
+
+### CoderAgent
+Given a particular task, and a detailed description of the codebase, accomplishes the task
+#### Inputs
+{"task": "string", "codebase_summary": "string"}
+
+### PostgresAgent
+Writes and maintains PostgreSQL migrations
+#### Inputs
+{"task": "string"}
+
+
+## History
+Here is a recent history of actions you've taken in service of this plan,
+as well as observations you've made. This only includes the MOST RECENT
+actions and observations--more may have happened before that.
+They are time-ordered, with your most recent action at the bottom.
+
+[[{"source": "user", "action": "message", "args": {"content": "Fix typos in bad.txt. Do not ask me for confirmation at any point.", "wait_for_response": false}}, {"observation": "null", "content": "", "extras": {}}], [{"source": "agent", "action": "delegate", "args": {"agent": "TypoFixerAgent", "inputs": {}, "thought": ""}}, {"observation": "null", "content": "", "extras": {}}], [{"source": "agent", "action": "read", "args": {"path": "./bad.txt", "start": 0, "end": -1, "thought": ""}}, {"source": "agent", "observation": "read", "content": "This is a stupid typoo.\nReally?\nNo mor typos!\nEnjoy!\n", "extras": {"path": "./bad.txt"}}], [{"source": "agent", "action": "message", "args": {"content": "The content of 'bad.txt' has been read. The following typos have been identified:\n\n1. 'typoo' should be 'typo'\n2. 'mor' should be 'more'\n\nI will now proceed to fix these typos and overwrite the original file.", "wait_for_response": false}}, {"observation": "null", "content": "", "extras": {}}], [{"source": "agent", "action": "write", "args": {"path": "./bad.txt", "content": "This is a stupid typo.\nReally?\nNo more typos!\nEnjoy!\n", "start": 0, "end": -1, "thought": ""}}, {"source": "agent", "observation": "write", "content": "", "extras": {"path": "./bad.txt"}}], [{"source": "agent", "action": "finish", "args": {"outputs": {"summary": {"file": "bad.txt", "typos_fixed": [{"original": "typoo", "fixed": "typo"}, {"original": "mor", "fixed": "more"}]}}, "thought": ""}}, {"observation": "null", "content": "", "extras": {}}]]
+
+## Available Actions
+* `delegate` - send a task to another agent from the list provided. Arguments:
+  * `agent` - the agent to which the task is delegated. MUST match a name in the list of agents provided.
+  * `inputs` - a dictionary of input parameters to the agent, as specified in the list
+
+* `finish` - if you're absolutely certain that you've completed your task and have tested your work, use the finish action to stop working. Arguments:
+  * `outputs` - a dictionary representing the outputs of your task, if any
+
+
+## Format
+Your response MUST be in JSON format. It must be an object, and it must contain two fields:
+* `action`, which is one of the actions specified here
+* `args`, which is a map of key-value pairs, specifying the arguments for that action
+
+You MUST NOT include any other text besides the JSON response
