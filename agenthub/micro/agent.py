@@ -42,6 +42,7 @@ def history_to_json(obj, **kwargs):
 
 
 class MicroAgent(Agent):
+    VERSION = '1.0'
     prompt = ''
     agent_definition: dict = {}
 
