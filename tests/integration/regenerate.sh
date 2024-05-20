@@ -19,7 +19,7 @@ WORKSPACE_MOUNT_PATH_IN_SANDBOX="/workspace"
 SANDBOX_TYPE="ssh"
 MAX_ITERATIONS=10
 
-agents=("MasterAgent" "ManagerAgent" "MonologueAgent" "CodeActAgent" "PlannerAgent" "SWEAgent")
+agents=("ManagerAgent" "MonologueAgent" "CodeActAgent" "PlannerAgent" "SWEAgent")
 tasks=(
   "Fix typos in bad.txt."
   "Write a shell script 'hello.sh' that prints 'hello'."
