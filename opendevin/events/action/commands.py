@@ -41,7 +41,6 @@ class CmdKillAction(Action):
         return f'**CmdKillAction**\n{self.command_id}'
 
     def __eq__(self, other: object) -> bool:
-        print('CmdKillAction.__eq__')
         if Action.is_ignoring_command_id():
             return all(
                 getattr(self, f.name) == getattr(other, f.name)

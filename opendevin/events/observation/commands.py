@@ -28,14 +28,12 @@ class CmdOutputObservation(Observation):
         return f'**CmdOutputObservation (exit code={self.exit_code})**\n{self.content}'
 
     def __eq__(self, other: object) -> bool:
-        print('CmdOutputObservation.__eq__')
         if Observation.is_ignoring_command_id():
             return all(
                 getattr(self, f.name) == getattr(other, f.name)
                 for f in fields(self)
                 if f.name != 'command_id'
             )
-        print(super().__eq__(other))
         return super().__eq__(other)
 
 
