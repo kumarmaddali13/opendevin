@@ -258,29 +258,33 @@ class AgentController:
         if len(filtered_history) < 4:
             return False
 
-        # Check if the last four (Action, Observation) tuples are too repetitive
-        last_four_tuples = filtered_history[-4:]
-        if all(last_four_tuples[-1] == _tuple for _tuple in last_four_tuples):
-            logger.warning('Action, Observation loop detected')
-            return True
-
-        if all(last_four_tuples[-1][0] == _tuple[0] for _tuple in last_four_tuples):
-            # It repeats the same action, give it a chance, but not if:
-            if all(
-                isinstance(_tuple[1], ErrorObservation) for _tuple in last_four_tuples
-            ):
-                logger.warning('Action, ErrorObservation loop detected')
+        with Event.ignore_command_id():
+            # Check if the last four (Action, Observation) tuples are too repetitive
+            last_four_tuples = filtered_history[-4:]
+            if all(last_four_tuples[-1] == _tuple for _tuple in last_four_tuples):
+                logger.warning('Action, Observation loop detected')
                 return True
 
-        # check if the agent repeats the same (Action, Observation)
-        # every other step in the last six tuples
-        if len(filtered_history) >= 6:
-            last_six_tuples = filtered_history[-6:]
-            if (
-                last_six_tuples[-1] == last_six_tuples[-3] == last_six_tuples[-5]
-                and last_six_tuples[-2] == last_six_tuples[-4] == last_six_tuples[-6]
-            ):
-                logger.warning('Action, Observation pattern detected')
-                return True
+            if all(last_four_tuples[-1][0] == _tuple[0] for _tuple in last_four_tuples):
+                # It repeats the same action, give it a chance, but not if:
+                if all(
+                    isinstance(_tuple[1], ErrorObservation)
+                    for _tuple in last_four_tuples
+                ):
+                    logger.warning('Action, ErrorObservation loop detected')
+                    return True
+
+            # check if the agent repeats the same (Action, Observation)
+            # every other step in the last six tuples
+            if len(filtered_history) >= 6:
+                last_six_tuples = filtered_history[-6:]
+                if (
+                    last_six_tuples[-1] == last_six_tuples[-3] == last_six_tuples[-5]
+                    and last_six_tuples[-2]
+                    == last_six_tuples[-4]
+                    == last_six_tuples[-6]
+                ):
+                    logger.warning('Action, Observation pattern detected')
+                    return True
 
         return False

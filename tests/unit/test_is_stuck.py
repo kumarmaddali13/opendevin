@@ -116,7 +116,10 @@ class TestAgentController:
             (
                 CmdRunAction(command='ls'),
                 CmdOutputObservation(
-                    command_id=1, command='ls', content='file1.txt\nfile2.txt'
+                    # different command_id, same thing
+                    command_id=2,
+                    command='ls',
+                    content='file1.txt\nfile2.txt',
                 ),
             ),
             (
@@ -128,7 +131,7 @@ class TestAgentController:
             (
                 CmdRunAction(command='ls'),
                 CmdOutputObservation(
-                    command_id=1, command='ls', content='file1.txt\nfile2.txt'
+                    command_id=3, command='ls', content='file1.txt\nfile2.txt'
                 ),
             ),
             (
@@ -196,7 +199,10 @@ class TestAgentController:
             (
                 CmdRunAction(command='ls'),
                 CmdOutputObservation(
-                    command_id=1, command='ls', content='file1.txt\nfile2.txt'
+                    # different command_id, same thing
+                    command_id=2,
+                    command='ls',
+                    content='file1.txt\nfile2.txt',
                 ),
             ),
             # message from the user
@@ -204,13 +210,13 @@ class TestAgentController:
             (
                 CmdRunAction(command='ls'),
                 CmdOutputObservation(
-                    command_id=1, command='ls', content='file1.txt\nfile2.txt'
+                    command_id=3, command='ls', content='file1.txt\nfile2.txt'
                 ),
             ),
             (
                 CmdRunAction(command='ls'),
                 CmdOutputObservation(
-                    command_id=1, command='ls', content='file1.txt\nfile2.txt'
+                    command_id=4, command='ls', content='file1.txt\nfile2.txt'
                 ),
             ),
         ]
