@@ -69,7 +69,6 @@ class AgentController:
         """
         self.id = sid
         self.agent = agent
-        self.max_iterations = max_iterations
         self.max_chars = max_chars
         if initial_state is None:
             self.state = State(inputs={}, max_iterations=max_iterations)
@@ -179,7 +178,7 @@ class AgentController:
         state = State(
             inputs=action.inputs or {},
             iteration=self.state.iteration,
-            max_iterations=self.max_iterations,
+            max_iterations=self.state.max_iterations,
             num_of_chars=self.state.num_of_chars,
             # TODO: the delegate probably doesn't need to know the full history
             history=self.state.history,
@@ -188,7 +187,7 @@ class AgentController:
             sid=self.id + '-delegate',
             agent=agent,
             event_stream=self.event_stream,
-            max_iterations=self.max_iterations,
+            max_iterations=self.state.max_iterations,
             max_chars=self.max_chars,
             initial_state=state,
         )
@@ -240,7 +239,7 @@ class AgentController:
             raise MaxCharsExceedError(self.state.num_of_chars, self.max_chars)
 
         logger.info(f'STEP {self.state.iteration}', extra={'msg_type': 'STEP'})
-        if self.state.iteration >= self.max_iterations:
+        if self.state.iteration >= self.state.max_iterations:
             await self.report_error('Agent reached maximum number of iterations')
             await self.set_agent_state_to(AgentState.ERROR)
             return
