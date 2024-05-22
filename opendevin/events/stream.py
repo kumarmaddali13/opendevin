@@ -22,9 +22,7 @@ class EventStreamSubscriber(str, Enum):
 
 class EventStream:
     sid: str
-    # For each subscriber ID, there is a stack of callback functions - useful
-    # when there are agent delegates
-    _subscribers: dict[str, list[Callable]]
+    _subscribers: dict[str, Callable]
     _cur_id: int
     _lock: asyncio.Lock
     _file_store: FileStore
@@ -66,17 +64,15 @@ class EventStream:
 
     def subscribe(self, id: EventStreamSubscriber, callback: Callable):
         if id in self._subscribers:
-            self._subscribers[id].append(callback)
+            raise ValueError('Subscriber already exists: ' + id)
         else:
-            self._subscribers[id] = [callback]
+            self._subscribers[id] = callback
 
     def unsubscribe(self, id: EventStreamSubscriber):
         if id not in self._subscribers:
             logger.warning('Subscriber not found during unsubscribe: ' + id)
         else:
-            self._subscribers[id].pop()
-            if len(self._subscribers[id]) == 0:
-                del self._subscribers[id]
+            del self._subscribers[id]
 
     # TODO: make this not async
     async def add_event(self, event: Event, source: EventSource):
@@ -87,6 +83,5 @@ class EventStream:
         event._source = source  # type: ignore [attr-defined]
         data = event_to_dict(event)
         self._file_store.write(self._get_filename_for_id(event.id), json.dumps(data))
-        for key, stack in self._subscribers.items():
-            callback = stack[-1]
-            await callback(event)
+        for key, fn in self._subscribers.items():
+            await fn(event)
