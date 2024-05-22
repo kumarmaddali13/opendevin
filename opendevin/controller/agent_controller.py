@@ -45,6 +45,7 @@ class AgentController:
     event_stream: EventStream
     state: State
     agent_task: Optional[asyncio.Task] = None
+    parent: 'AgentController | None' = None
     delegate: 'AgentController | None' = None
     _pending_action: Action | None = None
 
@@ -56,6 +57,7 @@ class AgentController:
         max_iterations: int = MAX_ITERATIONS,
         max_chars: int = MAX_CHARS,
         initial_state: State | None = None,
+        parent: 'AgentController | None' = None,
     ):
         """Initializes a new instance of the AgentController class.
 
@@ -75,15 +77,19 @@ class AgentController:
         else:
             self.state = initial_state
         self.event_stream = event_stream
-        self.event_stream.subscribe(
-            EventStreamSubscriber.AGENT_CONTROLLER, self.on_event
-        )
+        self.parent = parent
+        # delegates should not subscribe to event stream - the root controller would do
+        if self.parent is None:
+            self.event_stream.subscribe(
+                EventStreamSubscriber.AGENT_CONTROLLER, self.on_event
+            )
         self.agent_task = asyncio.create_task(self._start_step_loop())
 
     async def close(self):
         if self.agent_task is not None:
             self.agent_task.cancel()
-        self.event_stream.unsubscribe(EventStreamSubscriber.AGENT_CONTROLLER)
+        if self.parent is None:
+            self.event_stream.unsubscribe(EventStreamSubscriber.AGENT_CONTROLLER)
         await self.set_agent_state_to(AgentState.STOPPED)
 
     def update_state_before_step(self):
@@ -123,6 +129,9 @@ class AgentController:
             await asyncio.sleep(0.1)
 
     async def on_event(self, event: Event):
+        if self.delegate:
+            await self.delegate.on_event(event)
+            return
         if isinstance(event, ChangeAgentStateAction):
             await self.set_agent_state_to(event.agent_state)  # type: ignore
         elif isinstance(event, MessageAction):
@@ -190,6 +199,7 @@ class AgentController:
             max_iterations=self.state.max_iterations,
             max_chars=self.max_chars,
             initial_state=state,
+            parent=self,
         )
         await self.delegate.set_agent_state_to(AgentState.RUNNING)
 
