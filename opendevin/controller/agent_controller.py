@@ -97,6 +97,8 @@ class AgentController:
 
     def update_state_after_step(self):
         self.state.updated_info = []
+        # update metrics especially for cost
+        self.state.metrics = self.agent.llm.metrics
 
     async def report_error(self, message: str, exception: Exception | None = None):
         self.state.error = message
@@ -120,6 +122,7 @@ class AgentController:
             except Exception as e:
                 traceback.print_exc()
                 logger.error(f'Error while running the agent: {e}')
+                logger.error(traceback.format_exc())
                 await self.report_error(
                     'There was an unexpected error while running the agent', exception=e
                 )
@@ -281,6 +284,9 @@ class AgentController:
 
     def get_state(self):
         return self.state
+
+    def set_state(self, state: State):
+        self.state = state
 
     def _is_stuck(self):
         # check if delegate stuck

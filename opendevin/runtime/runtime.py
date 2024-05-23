@@ -31,6 +31,7 @@ from opendevin.runtime import (
 )
 from opendevin.runtime.browser.browser_env import BrowserEnv
 from opendevin.runtime.plugins import PluginRequirement
+from opendevin.storage import FileStore, InMemoryFileStore
 
 
 def create_sandbox(sid: str = 'default', sandbox_type: str = 'exec') -> Sandbox:
@@ -55,6 +56,7 @@ class Runtime:
     """
 
     sid: str
+    file_store: FileStore
 
     def __init__(
         self,
@@ -70,6 +72,7 @@ class Runtime:
             self.sandbox = sandbox
             self._is_external_sandbox = True
         self.browser = BrowserEnv()
+        self.file_store = InMemoryFileStore()
         self.event_stream = event_stream
         self.event_stream.subscribe(EventStreamSubscriber.RUNTIME, self.on_event)
         self._bg_task = asyncio.create_task(self._start_background_observation_loop())
@@ -117,7 +120,7 @@ class Runtime:
     async def submit_background_obs(self):
         """
         Returns all observations that have accumulated in the runtime's background.
-        Right now, this is just background commands, but could include e.g. asyncronous
+        Right now, this is just background commands, but could include e.g. asynchronous
         events happening in the browser.
         """
         for _id, cmd in self.sandbox.background_commands.items():
