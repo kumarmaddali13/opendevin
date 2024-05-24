@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 from typing import Optional, Type
 
 from opendevin.controller.agent import Agent
@@ -12,6 +13,7 @@ from opendevin.core.exceptions import (
 )
 from opendevin.core.logger import opendevin_logger as logger
 from opendevin.core.schema import AgentState
+from opendevin.events import EventSource, EventStream, EventStreamSubscriber
 from opendevin.events.action import (
     Action,
     AddTaskAction,
@@ -31,7 +33,6 @@ from opendevin.events.observation import (
     NullObservation,
     Observation,
 )
-from opendevin.events.stream import EventSource, EventStream, EventStreamSubscriber
 
 MAX_ITERATIONS = config.max_iterations
 MAX_CHARS = config.llm.max_chars
@@ -88,8 +89,13 @@ class AgentController:
 
     def update_state_after_step(self):
         self.state.updated_info = []
+        # update metrics especially for cost
+        self.state.metrics = self.agent.llm.metrics
 
-    async def report_error(self, message: str):
+    async def report_error(self, message: str, exception: Exception | None = None):
+        self.state.error = message
+        if exception:
+            self.state.error += f': {str(exception)}'
         await self.event_stream.add_event(ErrorObservation(message), EventSource.AGENT)
 
     async def add_history(self, action: Action, observation: Observation):
@@ -106,9 +112,11 @@ class AgentController:
                 logger.info('AgentController task was cancelled')
                 break
             except Exception as e:
+                traceback.print_exc()
                 logger.error(f'Error while running the agent: {e}')
+                logger.error(traceback.format_exc())
                 await self.report_error(
-                    'There was an unexpected error while running the agent'
+                    'There was an unexpected error while running the agent', exception=e
                 )
                 await self.set_agent_state_to(AgentState.ERROR)
                 break
@@ -120,10 +128,12 @@ class AgentController:
             await self.set_agent_state_to(event.agent_state)  # type: ignore
         elif isinstance(event, MessageAction):
             if event.source == EventSource.USER:
+                logger.info(event, extra={'msg_type': 'OBSERVATION'})
                 await self.add_history(event, NullObservation(''))
                 if self.get_agent_state() != AgentState.RUNNING:
                     await self.set_agent_state_to(AgentState.RUNNING)
             elif event.source == EventSource.AGENT and event.wait_for_response:
+                logger.info(event, extra={'msg_type': 'ACTION'})
                 await self.set_agent_state_to(AgentState.AWAITING_USER_INPUT)
         elif isinstance(event, AgentDelegateAction):
             await self.start_delegate(event)
@@ -138,8 +148,10 @@ class AgentController:
             if self._pending_action and self._pending_action.id == event.cause:
                 await self.add_history(self._pending_action, event)
                 self._pending_action = None
+                logger.info(event, extra={'msg_type': 'OBSERVATION'})
             elif isinstance(event, CmdOutputObservation):
                 await self.add_history(NullAction(), event)
+                logger.info(event, extra={'msg_type': 'OBSERVATION'})
 
     def reset_task(self):
         self.agent.reset()
@@ -148,6 +160,7 @@ class AgentController:
         logger.info(
             f'Setting agent({type(self.agent).__name__}) state from {self.state.agent_state} to {new_state}'
         )
+
         if new_state == self.state.agent_state:
             return
 
@@ -158,6 +171,10 @@ class AgentController:
         await self.event_stream.add_event(
             AgentStateChangedObservation('', self.state.agent_state), EventSource.AGENT
         )
+
+        if new_state == AgentState.INIT and self.state.resume_state:
+            await self.set_agent_state_to(self.state.resume_state)
+            self.state.resume_state = None
 
     def get_agent_state(self):
         """Returns the current state of the agent task."""
@@ -233,36 +250,50 @@ class AgentController:
     def get_state(self):
         return self.state
 
+    def set_state(self, state: State):
+        self.state = state
+
     def _is_stuck(self):
         # check if delegate stuck
         if self.delegate and self.delegate._is_stuck():
             return True
-        if len(self.state.history) < 3:
+
+        # filter out MessageAction with source='user' from history
+        filtered_history = [
+            _tuple
+            for _tuple in self.state.history
+            if not (
+                isinstance(_tuple[0], MessageAction)
+                and _tuple[0].source == EventSource.USER
+            )
+        ]
+
+        if len(filtered_history) < 4:
             return False
 
-        # if the last three (Action, Observation) tuples are too repetitive
-        # the agent got stuck in a loop
-        if all(
-            [
-                self.state.history[-i][0] == self.state.history[-3][0]
-                for i in range(1, 3)
-            ]
-        ):
-            # it repeats same action, give it a chance, but not if:
+        # Check if the last four (Action, Observation) tuples are too repetitive
+        last_four_tuples = filtered_history[-4:]
+        if all(last_four_tuples[-1] == _tuple for _tuple in last_four_tuples):
+            logger.warning('Action, Observation loop detected')
+            return True
+
+        if all(last_four_tuples[-1][0] == _tuple[0] for _tuple in last_four_tuples):
+            # It repeats the same action, give it a chance, but not if:
             if all(
-                isinstance(self.state.history[-i][1], NullObservation)
-                for i in range(1, 4)
+                isinstance(_tuple[1], ErrorObservation) for _tuple in last_four_tuples
             ):
-                # same (Action, NullObservation): like 'think' the same thought over and over
-                logger.warning('Action, NullObservation loop detected')
-                return True
-            elif all(
-                isinstance(self.state.history[-i][1], ErrorObservation)
-                for i in range(1, 4)
-            ):
-                # (NullAction, ErrorObservation): errors coming from an exception
-                # (Action, ErrorObservation): the same action getting an error, even if not necessarily the same error
                 logger.warning('Action, ErrorObservation loop detected')
+                return True
+
+        # check if the agent repeats the same (Action, Observation)
+        # every other step in the last six tuples
+        if len(filtered_history) >= 6:
+            last_six_tuples = filtered_history[-6:]
+            if (
+                last_six_tuples[-1] == last_six_tuples[-3] == last_six_tuples[-5]
+                and last_six_tuples[-2] == last_six_tuples[-4] == last_six_tuples[-6]
+            ):
+                logger.warning('Action, Observation pattern detected')
                 return True
 
         return False

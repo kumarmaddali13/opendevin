@@ -94,7 +94,7 @@ It must be an object, and it must contain two fields:
   * `state` - set to 'in_progress' to start the task, 'completed' to finish it, 'verified' to assert that it was successful, 'abandoned' to give up on it permanently, or `open` to stop working on it for now.
 * `finish` - if ALL of your tasks and subtasks have been verified or abandoned, and you're absolutely certain that you've completed your task and have tested your work, use the finish action to stop working.
 
-You MUST take time to think in between read, write, run, browse, and recall actions--do this with the `message` action.
+You MUST take time to think in between read, write, run, kill, browse, and recall actions--do this with the `message` action.
 You should never act twice in a row without thinking. But if your last several
 actions are all `message` actions, you should consider taking a different action.
 
@@ -155,7 +155,7 @@ def get_prompt(state: State) -> str:
     else:
         plan_status = "You're not currently working on any tasks. Your next action MUST be to mark a task as in_progress."
     hint = get_hint(event_to_memory(latest_action).get('action', ''))
-    logger.info('HINT:\n' + hint, extra={'msg_type': 'INFO'})
+    logger.info('HINT:\n' + hint, extra={'msg_type': 'DETAIL'})
     task = state.get_current_user_intent()
     return prompt % {
         'task': task,

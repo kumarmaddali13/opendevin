@@ -9,10 +9,10 @@ from opendevin.controller.state.state import State
 from opendevin.core.config import args, get_llm_config_arg
 from opendevin.core.logger import opendevin_logger as logger
 from opendevin.core.schema import AgentState
+from opendevin.events import EventSource, EventStream, EventStreamSubscriber
 from opendevin.events.action import ChangeAgentStateAction, MessageAction
 from opendevin.events.event import Event
 from opendevin.events.observation import AgentStateChangedObservation
-from opendevin.events.stream import EventSource, EventStream, EventStreamSubscriber
 from opendevin.llm.llm import LLM
 from opendevin.runtime.sandbox import Sandbox
 from opendevin.runtime.server.runtime import ServerRuntime
@@ -67,7 +67,7 @@ async def main(
             raise ValueError(f'Invalid toml file, cannot read {args.llm_config}')
 
         logger.info(
-            f'Running agent {args.agent_cls} (model: {llm_config.model}, llm_config: {llm_config}) with task: "{task}"'
+            f'Running agent {args.agent_cls} (model: {llm_config.model}, llm_config: {args.llm_config}) with task: "{task}"'
         )
 
         # create LLM instance with the given config
@@ -119,6 +119,7 @@ async def main(
         await asyncio.sleep(1)  # Give back control for a tick, so the agent can run
 
     await controller.close()
+    runtime.close()
     return controller.get_state()
 
 

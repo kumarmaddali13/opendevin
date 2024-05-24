@@ -1,6 +1,6 @@
 import atexit
-import json
 import os
+import re
 import sys
 import tarfile
 import tempfile
@@ -10,23 +10,86 @@ from collections import namedtuple
 from glob import glob
 
 import docker
-from pexpect import pxssh
+from pexpect import exceptions, pxssh
 
-from opendevin.const.guide_url import TROUBLESHOOTING_URL
 from opendevin.core.config import config
+from opendevin.core.const.guide_url import TROUBLESHOOTING_URL
 from opendevin.core.exceptions import SandboxInvalidBackgroundCommandError
 from opendevin.core.logger import opendevin_logger as logger
+from opendevin.core.schema import CancellableStream
 from opendevin.runtime.docker.process import DockerProcess, Process
-from opendevin.runtime.plugins import (
-    JupyterRequirement,
-    SWEAgentCommandsRequirement,
-)
+from opendevin.runtime.plugins import AgentSkillsRequirement, JupyterRequirement
 from opendevin.runtime.sandbox import Sandbox
 from opendevin.runtime.utils import find_available_tcp_port
 
 # FIXME: these are not used, can we remove them?
 InputType = namedtuple('InputType', ['content'])
 OutputType = namedtuple('OutputType', ['content'])
+
+
+class SSHExecCancellableStream(CancellableStream):
+    def __init__(self, ssh, cmd, timeout):
+        super().__init__(self.read_output())
+        self.ssh = ssh
+        self.cmd = cmd
+        self.timeout = timeout
+
+    def close(self):
+        self.closed = True
+
+    def exit_code(self):
+        self.ssh.sendline('echo $?')
+        success = self.ssh.prompt(timeout=self.timeout)
+        if not success:
+            return -1
+
+        _exit_code = self.ssh.before.strip()
+        return int(_exit_code)
+
+    def read_output(self):
+        st = time.time()
+        buf = ''
+        crlf = '\r\n'
+        lf = '\n'
+        prompt_len = len(self.ssh.PROMPT)
+        while True:
+            try:
+                if self.closed:
+                    break
+                _output = self.ssh.read_nonblocking(timeout=1)
+                if not _output:
+                    continue
+
+                buf += _output
+
+                if len(buf) < prompt_len:
+                    continue
+
+                match = re.search(self.ssh.PROMPT, buf)
+                if match:
+                    idx, _ = match.span()
+                    yield buf[:idx].replace(crlf, lf)
+                    buf = ''
+                    break
+
+                res = buf[:-prompt_len]
+                if len(res) == 0 or res.find(crlf) == -1:
+                    continue
+                buf = buf[-prompt_len:]
+                yield res.replace(crlf, lf)
+            except exceptions.TIMEOUT:
+                if time.time() - st < self.timeout:
+                    match = re.search(self.ssh.PROMPT, buf)
+                    if match:
+                        idx, _ = match.span()
+                        yield buf[:idx].replace(crlf, lf)
+                        break
+                    continue
+                else:
+                    yield buf.replace(crlf, lf)
+                break
+            except exceptions.EOF:
+                break
 
 
 def split_bash_commands(commands):
@@ -128,6 +191,7 @@ class DockerSSHBox(Sandbox):
 
     _ssh_password: str
     _ssh_port: int
+    ssh: pxssh.pxssh
 
     cur_background_id = 0
     background_commands: dict[int, Process] = {}
@@ -135,7 +199,7 @@ class DockerSSHBox(Sandbox):
     def __init__(
         self,
         container_image: str | None = None,
-        timeout: int = 120,
+        timeout: int = config.sandbox_timeout,
         sid: str | None = None,
     ):
         logger.info(
@@ -155,10 +219,6 @@ class DockerSSHBox(Sandbox):
             sid + str(uuid.uuid4()) if sid is not None else str(uuid.uuid4())
         )
 
-        # TODO: this timeout is actually essential - need a better way to set it
-        # if it is too short, the container may still waiting for previous
-        # command to finish (e.g. apt-get update)
-        # if it is too long, the user may have to wait for a unnecessary long time
         self.timeout = timeout
         self.container_image = (
             config.sandbox_container_image
@@ -186,16 +246,23 @@ class DockerSSHBox(Sandbox):
                     raise e
                 time.sleep(5)
         self.setup_user()
-        self.start_ssh_session()
+
+        try:
+            self.start_ssh_session()
+        except pxssh.ExceptionPxssh as e:
+            self.close()
+            raise e
+
         # make sure /tmp always exists
         self.execute('mkdir -p /tmp')
+        # set git config
+        self.execute('git config --global user.name "OpenDevin"')
+        self.execute('git config --global user.email "opendevin@opendevin.ai"')
         atexit.register(self.close)
         super().__init__()
 
     def add_to_env(self, key: str, value: str):
         super().add_to_env(key, value)
-        # Note: json.dumps gives us nice escaping for free
-        self.execute(f'export {key}={json.dumps(value)}')
 
     def setup_user(self):
         # Make users sudoers passwordless
@@ -290,11 +357,25 @@ class DockerSSHBox(Sandbox):
             environment=self._env,
         )
 
-    def start_ssh_session(self):
-        # start ssh session at the background
-        self.ssh = pxssh.pxssh(
-            echo=False, timeout=self.timeout, encoding='utf-8', codec_errors='replace'
-        )
+    def start_ssh_session(self, n_retries=5):
+        while n_retries > 0:
+            try:
+                self.ssh = pxssh.pxssh(
+                    echo=False,
+                    timeout=self.timeout,
+                    encoding='utf-8',
+                    codec_errors='replace',
+                )
+                break
+            except pxssh.ExceptionPxssh as e:
+                logger.exception(
+                    'Failed to start SSH session, retrying...', exc_info=False
+                )
+                n_retries -= 1
+                if n_retries == 0:
+                    raise e
+                time.sleep(5)
+
         hostname = self.ssh_hostname
         if self.run_as_devin:
             username = 'opendevin'
@@ -344,9 +425,10 @@ class DockerSSHBox(Sandbox):
             f'Command: "{cmd}" timed out. Sending SIGINT to the process: {command_output}',
         )
 
-    def execute(self, cmd: str, timeout: int | None = None) -> tuple[int, str]:
-        timeout = timeout if timeout is not None else self.timeout
-
+    def execute(
+        self, cmd: str, stream: bool = False, timeout: int | None = None
+    ) -> tuple[int, str | CancellableStream]:
+        timeout = timeout or self.timeout
         commands = split_bash_commands(cmd)
         if len(commands) > 1:
             all_output = ''
@@ -354,11 +436,14 @@ class DockerSSHBox(Sandbox):
                 exit_code, output = self.execute(command)
                 if all_output:
                     all_output += '\r\n'
-                all_output += output
+                all_output += str(output)
                 if exit_code != 0:
                     return exit_code, all_output
             return 0, all_output
+
         self.ssh.sendline(cmd)
+        if stream:
+            return 0, SSHExecCancellableStream(self.ssh, cmd, self.timeout)
         success = self.ssh.prompt(timeout=timeout)
         if not success:
             logger.exception('Command timed out, killing process...', exc_info=False)
@@ -378,7 +463,7 @@ class DockerSSHBox(Sandbox):
             logger.debug(
                 f'WAITING FOR END OF command output ({bool(output)}): {output}'
             )
-            if output == '':
+            if isinstance(output, str) and output.strip() == '':
                 break
             command_output += output
         command_output = command_output.removesuffix('\r\n')
@@ -386,17 +471,25 @@ class DockerSSHBox(Sandbox):
         # get the exit code
         self.ssh.sendline('echo $?')
         self.ssh.prompt()
-        exit_code_str = self.ssh.before
+        exit_code_str = self.ssh.before.strip()
         _start_time = time.time()
         while not exit_code_str:
-            self.ssh.prompt()
-            exit_code_str = self.ssh.before
+            self.ssh.prompt(timeout=1)
+            exit_code_str = self.ssh.before.strip()
             logger.debug(f'WAITING FOR exit code: {exit_code_str}')
             if time.time() - _start_time > timeout:
                 return self._send_interrupt(
                     cmd, command_output, ignore_last_output=True
                 )
-        exit_code = int(exit_code_str.strip())
+        cleaned_exit_code_str = exit_code_str.replace('echo $?', '').strip()
+
+        try:
+            exit_code = int(cleaned_exit_code_str)
+        except ValueError:
+            logger.error(f'Invalid exit code: {cleaned_exit_code_str}')
+            # Handle the invalid exit code appropriately (e.g., raise an exception or set a default value)
+            exit_code = -1  # or some other appropriate default value
+
         return exit_code, command_output
 
     def copy_to(self, host_src: str, sandbox_dest: str, recursive: bool = False):
@@ -499,7 +592,7 @@ class DockerSSHBox(Sandbox):
         exit_code, result = self.execute('pwd')
         if exit_code != 0:
             raise Exception('Failed to get working directory')
-        return result.strip()
+        return str(result).strip()
 
     @property
     def user_id(self):
@@ -635,22 +728,22 @@ if __name__ == '__main__':
     )
 
     # Initialize required plugins
-    ssh_box.init_plugins([JupyterRequirement(), SWEAgentCommandsRequirement()])
+    ssh_box.init_plugins([AgentSkillsRequirement(), JupyterRequirement()])
     logger.info(
-        '--- SWE-AGENT COMMAND DOCUMENTATION ---\n'
-        f'{SWEAgentCommandsRequirement().documentation}\n'
+        '--- AgentSkills COMMAND DOCUMENTATION ---\n'
+        f'{AgentSkillsRequirement().documentation}\n'
         '---'
     )
 
     bg_cmd = ssh_box.execute_in_background(
-        "while true; do echo 'dot ' && sleep 10; done"
+        "while true; do echo -n '.' && sleep 10; done"
     )
 
     sys.stdout.flush()
     try:
         while True:
             try:
-                user_input = input('>>> ')
+                user_input = input('$ ')
             except EOFError:
                 logger.info('Exiting...')
                 break

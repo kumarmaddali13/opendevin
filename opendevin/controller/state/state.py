@@ -1,6 +1,10 @@
+import base64
+import pickle
 from dataclasses import dataclass, field
 
 from opendevin.controller.state.task import RootTask
+from opendevin.core.logger import opendevin_logger as logger
+from opendevin.core.metrics import Metrics
 from opendevin.core.schema import AgentState
 from opendevin.events.action import (
     Action,
@@ -10,6 +14,14 @@ from opendevin.events.observation import (
     CmdOutputObservation,
     Observation,
 )
+from opendevin.storage import get_file_store
+
+RESUMABLE_STATES = [
+    AgentState.RUNNING,
+    AgentState.PAUSED,
+    AgentState.AWAITING_USER_INPUT,
+    AgentState.FINISHED,
+]
 
 
 @dataclass
@@ -26,6 +38,35 @@ class State:
     outputs: dict = field(default_factory=dict)
     error: str | None = None
     agent_state: AgentState = AgentState.LOADING
+    resume_state: AgentState | None = None
+    metrics: Metrics = Metrics()
+
+    def save_to_session(self, sid: str):
+        fs = get_file_store()
+        pickled = pickle.dumps(self)
+        encoded = base64.b64encode(pickled).decode('utf-8')
+        try:
+            fs.write(f'sessions/{sid}/agent_state.pkl', encoded)
+        except Exception as e:
+            logger.error(f'Failed to save state to session: {e}')
+            raise e
+
+    @staticmethod
+    def restore_from_session(sid: str) -> 'State':
+        fs = get_file_store()
+        try:
+            encoded = fs.read(f'sessions/{sid}/agent_state.pkl')
+            pickled = base64.b64decode(encoded)
+            state = pickle.loads(pickled)
+        except Exception as e:
+            logger.error(f'Failed to restore state from session: {e}')
+            raise e
+        if state.agent_state in RESUMABLE_STATES:
+            state.resume_state = state.agent_state
+        else:
+            state.resume_state = None
+        state.agent_state = AgentState.LOADING
+        return state
 
     def get_current_user_intent(self):
         # TODO: this is used to understand the user's main goal, but it's possible

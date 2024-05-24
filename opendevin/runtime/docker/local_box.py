@@ -5,6 +5,7 @@ import sys
 
 from opendevin.core.config import config
 from opendevin.core.logger import opendevin_logger as logger
+from opendevin.core.schema import CancellableStream
 from opendevin.runtime.docker.process import DockerProcess, Process
 from opendevin.runtime.sandbox import Sandbox
 
@@ -25,7 +26,7 @@ from opendevin.runtime.sandbox import Sandbox
 
 
 class LocalBox(Sandbox):
-    def __init__(self, timeout: int = 120):
+    def __init__(self, timeout: int = config.sandbox_timeout):
         os.makedirs(config.workspace_base, exist_ok=True)
         self.timeout = timeout
         self.background_commands: dict[int, Process] = {}
@@ -33,7 +34,9 @@ class LocalBox(Sandbox):
         atexit.register(self.cleanup)
         super().__init__()
 
-    def execute(self, cmd: str, timeout: int | None = None) -> tuple[int, str]:
+    def execute(
+        self, cmd: str, stream: bool = False, timeout: int | None = None
+    ) -> tuple[int, str | CancellableStream]:
         timeout = timeout if timeout is not None else self.timeout
         try:
             completed_process = subprocess.run(
