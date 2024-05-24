@@ -1,3 +1,4 @@
+import os
 import sys
 import uuid
 
@@ -29,7 +30,8 @@ class SWEBenchSSHBox(DockerSSHBox):
             container_image is not None
         ), 'container_image is required for SWEBenchSSHBox!'
         # Need to run as root to use SWEBench container
-        sid = f'swe_bench_{swe_instance_id}' + str(uuid.uuid4())
+        current_user = os.getenv('USER', 'unknown_user')
+        sid = f'swe_bench_{swe_instance_id}_{current_user}_' + str(uuid.uuid4())
         super().__init__(container_image, timeout, sid)
 
         exit_code, output = self.execute('mv ~/.bashrc ~/.bashrc.bak')
