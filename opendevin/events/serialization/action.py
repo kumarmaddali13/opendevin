@@ -16,7 +16,12 @@ from opendevin.events.action.commands import (
 from opendevin.events.action.empty import NullAction
 from opendevin.events.action.files import FileReadAction, FileWriteAction
 from opendevin.events.action.message import MessageAction
-from opendevin.events.action.tasks import AddTaskAction, ModifyTaskAction
+from opendevin.events.action.tasks import (
+    AddTaskAction,
+    ModifyTaskAction,
+    PlanStepAction,
+    SavePlanAction,
+)
 
 actions = (
     NullAction,
@@ -31,6 +36,8 @@ actions = (
     AgentFinishAction,
     AgentRejectAction,
     AgentDelegateAction,
+    SavePlanAction,
+    PlanStepAction,
     AddTaskAction,
     ModifyTaskAction,
     ChangeAgentStateAction,

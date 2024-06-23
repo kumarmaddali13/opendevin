@@ -24,6 +24,7 @@ function Workspace() {
   const baseTabs = [TabOption.CODE, TabOption.BROWSER];
   const extraTabsMap: { [key: string]: TabOption[] } = {
     CodeActAgent: [TabOption.JUPYTER],
+    CodeActPlanningAgent: [TabOption.JUPYTER],
     PlannerAgent: [TabOption.PLANNER],
   };
   const extraTabs = extraTabsMap[AGENT] || [];

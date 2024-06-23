@@ -13,6 +13,7 @@ class CmdRunAction(Action):
     thought: str = ''
     action: str = ActionType.RUN
     runnable: ClassVar[bool] = True
+    step: int | None = None
 
     @property
     def message(self) -> str:
@@ -48,6 +49,7 @@ class IPythonRunCellAction(Action):
     action: str = ActionType.RUN_IPYTHON
     runnable: ClassVar[bool] = True
     kernel_init_code: str = ''  # code to run in the kernel (if the kernel is restarted)
+    step: int | None = None
 
     def __str__(self) -> str:
         ret = '**IPythonRunCellAction**\n'

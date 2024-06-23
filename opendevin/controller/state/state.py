@@ -27,6 +27,8 @@ RESUMABLE_STATES = [
 @dataclass
 class State:
     root_task: RootTask = field(default_factory=RootTask)
+    current_plan: list[str] | None = None
+    plan_step: int = 1
     iteration: int = 0
     max_iterations: int = 100
     # number of characters we have sent to and received from LLM so far for current task
@@ -77,3 +79,16 @@ class State:
         for action, obs in reversed(self.history):
             if isinstance(action, MessageAction) and action.source == 'user':
                 return action.content
+
+    def get_current_plan_str(self) -> str | None:
+        """Convert the current plan to a string, with its current step highlighted."""
+        if self.current_plan:
+            return '\n'.join(
+                (
+                    f'**{i + 1}**. {step}'
+                    if i == self.plan_step - 1
+                    else f'{i + 1}. {step}'
+                )
+                for i, step in enumerate(self.current_plan)
+            )
+        return None

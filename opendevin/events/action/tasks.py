@@ -6,6 +6,28 @@ from .action import Action
 
 
 @dataclass
+class SavePlanAction(Action):
+    plan: list[str]
+    thought: str = ''
+    action: str = ActionType.SAVE_PLAN
+
+    @property
+    def message(self) -> str:
+        return f'Saved plan: {self.plan}'
+
+
+@dataclass
+class PlanStepAction(Action):
+    step: int
+    thought: str = ''
+    action: str = ActionType.PLAN_STEP
+
+    @property
+    def message(self) -> str:
+        return f'Moved to step: {self.step}'
+
+
+@dataclass
 class AddTaskAction(Action):
     parent: str
     goal: str

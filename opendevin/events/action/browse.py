@@ -32,6 +32,7 @@ class BrowseInteractiveAction(Action):
     browsergym_send_msg_to_user: str = ''
     action: str = ActionType.BROWSE_INTERACTIVE
     runnable: ClassVar[bool] = True
+    step: int | None = None
 
     @property
     def message(self) -> str:

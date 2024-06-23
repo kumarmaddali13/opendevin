@@ -26,6 +26,7 @@ from opendevin.events.action import (
     NullAction,
 )
 from opendevin.events.action.commands import CmdKillAction
+from opendevin.events.action.tasks import PlanStepAction, SavePlanAction
 from opendevin.events.event import Event
 from opendevin.events.observation import (
     AgentDelegateObservation,
@@ -164,6 +165,12 @@ class AgentController:
                 await self.set_agent_state_to(AgentState.AWAITING_USER_INPUT)
         elif isinstance(event, AgentDelegateAction):
             await self.start_delegate(event)
+        elif isinstance(event, SavePlanAction):
+            self.state.current_plan = event.plan
+        elif isinstance(event, PlanStepAction):
+            self.state.plan_step = event.step
+        elif isinstance(event, AddTaskAction):
+            self.state.root_task.add_subtask(event.parent, event.goal, event.subtasks)
         elif isinstance(event, AddTaskAction):
             self.state.root_task.add_subtask(event.parent, event.goal, event.subtasks)
         elif isinstance(event, ModifyTaskAction):

@@ -12,7 +12,7 @@ from .commands import CmdKillAction, CmdRunAction, IPythonRunCellAction
 from .empty import NullAction
 from .files import FileReadAction, FileWriteAction
 from .message import MessageAction
-from .tasks import AddTaskAction, ModifyTaskAction
+from .tasks import AddTaskAction, ModifyTaskAction, PlanStepAction, SavePlanAction
 
 __all__ = [
     'Action',
@@ -33,4 +33,6 @@ __all__ = [
     'ChangeAgentStateAction',
     'IPythonRunCellAction',
     'MessageAction',
+    'SavePlanAction',
+    'PlanStepAction',
 ]

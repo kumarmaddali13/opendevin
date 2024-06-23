@@ -74,6 +74,7 @@ class AgentDelegateAction(Action):
     inputs: dict
     thought: str = ''
     action: str = ActionType.DELEGATE
+    step: int | None = None
 
     @property
     def message(self) -> str:
