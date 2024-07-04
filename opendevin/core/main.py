@@ -1,3 +1,4 @@
+from .browser_tasks import handle_browser_task
 import asyncio
 import os
 import sys
@@ -115,10 +116,10 @@ async def run_agent_controller(
             if event.agent_state == AgentState.AWAITING_USER_INPUT:
                 if exit_on_message:
                     message = '/exit'
-                elif fake_user_response_fn is None:
+                if fake_user_response_fn is None:
                     message = input('Request user input >> ')
                 else:
-                    message = fake_user_response_fn(controller.get_state())
+                    message = handle_browser_task(controller.get_state())
                 action = MessageAction(content=message)
                 await event_stream.add_event(action, EventSource.USER)
 
