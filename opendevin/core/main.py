@@ -1,3 +1,4 @@
+from .browser_tasks import handle_browser_task
 import asyncio
 import os
 import sys
@@ -87,15 +88,8 @@ async def run_agent_controller(
         runtime_tools_config=runtime_tools_config,
     )
 
-    # browser eval specific
-    # TODO: move to a better place
-    if runtime.browser and runtime.browser.eval_dir:
-        logger.info(f'Evaluation directory: {runtime.browser.eval_dir}')
-        with open(
-            os.path.join(runtime.browser.eval_dir, 'goal.txt'), 'r', encoding='utf-8'
-        ) as f:
-            task_str = f.read()
-            logger.info(f'Dynamic Eval task: {task_str}')
+    # Handle browser-based tasks
+    task_str = handle_browser_task(runtime) or task_str
 
     # start event is a MessageAction with the task, either resumed or new
     if config.enable_cli_session and initial_state is not None:
@@ -115,10 +109,7 @@ async def run_agent_controller(
             if event.agent_state == AgentState.AWAITING_USER_INPUT:
                 if exit_on_message:
                     message = '/exit'
-                elif fake_user_response_fn is None:
-                    message = input('Request user input >> ')
-                else:
-                    message = fake_user_response_fn(controller.get_state())
+                message = input('Request user input >> ')
                 action = MessageAction(content=message)
                 await event_stream.add_event(action, EventSource.USER)
 
