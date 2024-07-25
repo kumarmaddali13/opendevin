@@ -68,6 +68,8 @@ python-pptx = "*"
 opencv-python = "*"
 pandas = "*"
 reportlab = "*"
+tree-sitter = "0.21.3"
+tree-sitter-languages = "1.10.2"
 
 [tool.coverage.run]
 concurrency = ["gevent"]
