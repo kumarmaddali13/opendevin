@@ -78,6 +78,8 @@ class LLMConfig:
     input_cost_per_token: float | None = None
     output_cost_per_token: float | None = None
     ollama_base_url: str | None = None
+    message_summary_trunc_tokens_frac: float = 0.75
+    attempts_to_condense: int = 2
     drop_params: bool | None = None
 
     def defaults_to_dict(self) -> dict:

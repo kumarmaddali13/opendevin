@@ -12,6 +12,7 @@ from opendevin.events.action import (
     Action,
     AgentDelegateAction,
     AgentFinishAction,
+    AgentSummarizeAction,
     CmdRunAction,
     IPythonRunCellAction,
     MessageAction,
@@ -24,6 +25,7 @@ from opendevin.events.observation import (
 from opendevin.events.observation.observation import Observation
 from opendevin.events.serialization.event import truncate_content
 from opendevin.llm.llm import LLM
+from opendevin.llm.messages import Message
 from opendevin.runtime.plugins import (
     AgentSkillsRequirement,
     JupyterRequirement,
@@ -121,25 +123,39 @@ class CodeActAgent(Agent):
             return f'{action.thought}\n<execute_browse>\n{action.inputs["task"]}\n</execute_browse>'
         elif isinstance(action, MessageAction):
             return action.content
+        elif isinstance(action, AgentSummarizeAction):
+            return (
+                'Summary of all Action and Observations till now. \n'
+                + 'Action: '
+                + action.summarized_actions
+                + '\nObservation: '
+                + action.summarized_observations
+            )
         elif isinstance(action, AgentFinishAction) and action.source == 'agent':
             return action.thought
         return ''
 
-    def get_action_message(self, action: Action) -> dict[str, str] | None:
+    def get_action_message(self, action: Action) -> Message | None:
+        message = None
         if (
             isinstance(action, AgentDelegateAction)
             or isinstance(action, CmdRunAction)
             or isinstance(action, IPythonRunCellAction)
             or isinstance(action, MessageAction)
+            or isinstance(action, AgentSummarizeAction)
             or (isinstance(action, AgentFinishAction) and action.source == 'agent')
         ):
-            return {
+            message = {
                 'role': 'user' if action.source == 'user' else 'assistant',
                 'content': self.action_to_str(action),
             }
-        return None
+        if message:
+            return Message(message=message, condensable=True, event_id=action.id)
+        else:
+            return None
 
-    def get_observation_message(self, obs: Observation) -> dict[str, str] | None:
+    def get_observation_message(self, obs: Observation) -> Message | None:
+        message = None
         max_message_chars = self.llm.config.max_message_chars
         if isinstance(obs, CmdOutputObservation):
             content = 'OBSERVATION:\n' + truncate_content(
@@ -148,7 +164,7 @@ class CodeActAgent(Agent):
             content += (
                 f'\n[Command {obs.command_id} finished with exit code {obs.exit_code}]'
             )
-            return {'role': 'user', 'content': content}
+            message = {'role': 'user', 'content': content}
         elif isinstance(obs, IPythonRunCellObservation):
             content = 'OBSERVATION:\n' + obs.content
             # replace base64 images with a placeholder
@@ -160,13 +176,16 @@ class CodeActAgent(Agent):
                     )
             content = '\n'.join(splitted)
             content = truncate_content(content, max_message_chars)
-            return {'role': 'user', 'content': content}
+            message = {'role': 'user', 'content': content}
         elif isinstance(obs, AgentDelegateObservation):
             content = 'OBSERVATION:\n' + truncate_content(
                 str(obs.outputs), max_message_chars
             )
-            return {'role': 'user', 'content': content}
-        return None
+            message = {'role': 'user', 'content': content}
+        if message:
+            return Message(message=message, condensable=True, event_id=obs.id)
+        else:
+            return None
 
     def reset(self) -> None:
         """Resets the CodeAct Agent."""
@@ -191,48 +210,69 @@ class CodeActAgent(Agent):
         if latest_user_message and latest_user_message.strip() == '/exit':
             return AgentFinishAction()
 
-        # prepare what we want to send to the LLM
-        messages: list[dict[str, str]] = self._get_messages(state)
+        response = None
+        # give it multiple chances to get a response
+        # if it fails, we'll try to condense memory
+        attempt = 0
+        while not response and attempt < self.llm.config.attempts_to_condense:
+            # prepare what we want to send to the LLM
+            messages: list[Message] = self._get_messages(state)
+            print('No of tokens, ' + str(self.llm.get_token_count(messages)) + '\n')
+            response = self.llm.completion(
+                messages=messages,
+                stop=[
+                    '</execute_ipython>',
+                    '</execute_bash>',
+                    '</execute_browse>',
+                ],
+                temperature=0.0,
+                condense=True,
+            )
+            attempt += 1
 
-        response = self.llm.completion(
-            messages=messages,
-            stop=[
-                '</execute_ipython>',
-                '</execute_bash>',
-                '</execute_browse>',
-            ],
-            temperature=0.0,
-        )
         return self.action_parser.parse(response)
 
-    def _get_messages(self, state: State) -> list[dict[str, str]]:
+    def search_memory(self, query: str) -> list[str]:
+        raise NotImplementedError('Implement this abstract method')
+
+    def _get_messages(self, state: State) -> list[Message]:
         messages = [
-            {'role': 'system', 'content': self.system_message},
-            {'role': 'user', 'content': self.in_context_example},
+            Message(
+                message={'role': 'system', 'content': self.system_message},
+                condensable=False,
+            ),
+            Message(
+                message={'role': 'user', 'content': self.in_context_example},
+                condensable=False,
+            ),
         ]
 
+        if state.history.summary:
+            summary_message = self.get_action_message(state.history.summary)
+            if summary_message:
+                messages.append(summary_message)
         for event in state.history.get_events():
-            # create a regular message from an event
-            if isinstance(event, Action):
-                message = self.get_action_message(event)
-            elif isinstance(event, Observation):
-                message = self.get_observation_message(event)
-            else:
-                raise ValueError(f'Unknown event type: {type(event)}')
-
-            # add regular message
-            if message:
-                messages.append(message)
+            if event.id > state.history.last_summarized_event_id:
+                # create a regular message from an event
+                if isinstance(event, Action):
+                    message = self.get_action_message(event)
+                elif isinstance(event, Observation):
+                    message = self.get_observation_message(event)
+                else:
+                    raise ValueError(f'Unknown event type: {type(event)}')
+                # add regular message
+                if message:
+                    messages.append(message)
 
         # the latest user message is important:
         # we want to remind the agent of the environment constraints
         latest_user_message = next(
-            (m for m in reversed(messages) if m['role'] == 'user'), None
+            (m for m in reversed(messages) if m.message['role'] == 'user'), None
         )
 
         # add a reminder to the prompt
         if latest_user_message:
-            latest_user_message['content'] += (
+            latest_user_message.message['content'] += (
                 f'\n\nENVIRONMENT REMINDER: You have {state.max_iterations - state.iteration} turns left to complete the task. When finished reply with <finish></finish>'
             )
 
