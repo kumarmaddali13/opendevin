@@ -3,7 +3,7 @@ import copy
 import os
 import tempfile
 import uuid
-from typing import Any, Optional
+from typing import Optional
 from zipfile import ZipFile
 
 import aiohttp
@@ -74,6 +74,11 @@ class EventStreamRuntime(Runtime):
         self.action_semaphore = asyncio.Semaphore(1)  # Ensure one action at a time
 
     async def ainit(self, env_vars: dict[str, str] | None = None):
+        if self.config.sandbox.od_runtime_extra_deps:
+            logger.info(
+                f'Installing extra user-provided dependencies in the runtime image: {self.config.sandbox.od_runtime_extra_deps}'
+            )
+
         self.container_image = build_runtime_image(
             self.container_image,
             self.docker_client,
@@ -81,6 +86,7 @@ class EventStreamRuntime(Runtime):
             # inside the container. This is useful when you want to test/debug the
             # latest code in the runtime docker container.
             update_source_code=self.config.sandbox.update_source_code,
+            extra_deps=self.config.sandbox.od_runtime_extra_deps,
         )
         self.container = await self._init_container(
             self.sandbox_workspace_dir,
@@ -226,7 +232,7 @@ class EventStreamRuntime(Runtime):
 
     async def copy_to(
         self, host_src: str, sandbox_dest: str, recursive: bool = False
-    ) -> dict[str, Any]:
+    ) -> None:
         if not os.path.exists(host_src):
             raise FileNotFoundError(f'Source file {host_src} does not exist')
 
@@ -260,7 +266,7 @@ class EventStreamRuntime(Runtime):
                 f'{self.api_url}/upload_file', data=upload_data, params=params
             ) as response:
                 if response.status == 200:
-                    return await response.json()
+                    return
                 else:
                     error_message = await response.text()
                     raise Exception(f'Copy operation failed: {error_message}')
@@ -272,6 +278,7 @@ class EventStreamRuntime(Runtime):
         finally:
             if recursive:
                 os.unlink(temp_zip_path)
+            logger.info(f'Copy completed: host:{host_src} -> runtime:{sandbox_dest}')
 
     async def run_action(self, action: Action) -> Observation:
         # set timeout to default if not set
