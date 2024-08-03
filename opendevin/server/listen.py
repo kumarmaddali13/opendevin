@@ -7,6 +7,7 @@ import requests
 from pathspec import PathSpec
 from pathspec.patterns import GitWildMatchPattern
 
+from opendevin.security.options import SecurityAnalyzers
 from opendevin.server.data_models.feedback import FeedbackDataModel, store_feedback
 from opendevin.storage import get_file_store
 
@@ -352,6 +353,21 @@ async def get_agents():
     """
     agents = sorted(Agent.list_agents())
     return agents
+
+
+@app.get('/api/options/security-analyzers')
+async def get_security_analyzers():
+    """Get all supported security analyzers.
+
+    To get the security analyzers:
+    ```sh
+    curl http://localhost:3000/api/security-analyzers
+    ```
+
+    Returns:
+        list: A sorted list of security analyzer names.
+    """
+    return sorted(SecurityAnalyzers.keys())
 
 
 @app.get('/api/list-files')
@@ -720,6 +736,31 @@ async def save_file(request: Request):
         # Log the error and return a 500 response
         logger.error(f'Error saving file: {e}', exc_info=True)
         raise HTTPException(status_code=500, detail=f'Error saving file: {e}')
+
+
+@app.route('/api/security/{path:path}', methods=['GET', 'POST', 'PUT', 'DELETE'])
+async def security_api(request: Request):
+    """Catch-all route for security analyzer API requests.
+
+    Each request is handled directly to the security analyzer.
+
+    Args:
+        request (Request): The incoming FastAPI request object.
+
+    Returns:
+        Any: The response from the security analyzer.
+
+    Raises:
+        HTTPException: If the security analyzer is not initialized.
+    """
+    if not request.state.session.agent_session.security_analyzer:
+        raise HTTPException(status_code=404, detail='Security analyzer not initialized')
+
+    return (
+        await request.state.session.agent_session.security_analyzer.handle_api_request(
+            request
+        )
+    )
 
 
 app.mount('/', StaticFiles(directory='./frontend/dist', html=True), name='dist')
