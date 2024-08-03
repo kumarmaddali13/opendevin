@@ -141,6 +141,9 @@ async def _load_runtime(
         runtime = ServerRuntime(
             config=config, event_stream=event_stream, sid=sid, plugins=plugins
         )
+        assert (
+            runtime.sandbox.run_as_devin == run_as_devin
+        ), f'run_as_devin in sandbox should be {run_as_devin}'
         await runtime.ainit()
         from opendevin.runtime.tools import (
             RuntimeTool,  # deprecate this after ServerRuntime is deprecated
@@ -197,6 +200,7 @@ async def test_env_vars_runtime_add_env_vars(temp_dir, box_class):
     await asyncio.sleep(1)
 
 
+@pytest.mark.selected
 @pytest.mark.asyncio
 async def test_env_vars_runtime_add_empty_dict(temp_dir, box_class):
     runtime = await _load_runtime(temp_dir, box_class)
@@ -286,6 +290,7 @@ async def test_bash_command_pexcept(temp_dir, box_class, run_as_devin):
     await asyncio.sleep(1)
 
 
+@pytest.mark.selected
 @pytest.mark.asyncio
 async def test_simple_cmd_ipython_and_fileop(temp_dir, box_class, run_as_devin):
     runtime = await _load_runtime(temp_dir, box_class, run_as_devin)
@@ -633,6 +638,7 @@ async def test_cmd_run(temp_dir, box_class, run_as_devin):
     await asyncio.sleep(1)
 
 
+@pytest.mark.selected
 @pytest.mark.asyncio
 async def test_run_as_user_correct_home_dir(temp_dir, box_class, run_as_devin):
     runtime = await _load_runtime(temp_dir, box_class, run_as_devin)
@@ -900,6 +906,7 @@ DO NOT re-run the same failed edit command. Running it again will lead to the sa
     assert obs.exit_code == 0
 
 
+@pytest.mark.selected
 @pytest.mark.asyncio
 async def test_ipython_agentskills_fileop_pwd(temp_dir, box_class, enable_auto_lint):
     """Make sure that cd in bash also update the current working directory in ipython."""
