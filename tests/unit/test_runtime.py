@@ -844,6 +844,9 @@ async def test_ipython_simple(temp_dir, box_class):
     logger.info(obs, extra={'msg_type': 'OBSERVATION'})
     assert obs.content.strip() == '1'
 
+    await runtime.close()
+    await asyncio.sleep(1)
+
 
 async def _test_ipython_agentskills_fileop_pwd_impl(
     runtime: ServerRuntime | EventStreamRuntime, enable_auto_lint: bool
@@ -956,21 +959,20 @@ DO NOT re-run the same failed edit command. Running it again will lead to the sa
 
 
 @pytest.mark.asyncio
-async def test_ipython_agentskills_fileop_pwd(temp_dir, box_class, enable_auto_lint):
+async def test_ipython_agentskills_fileop_pwd(
+    temp_dir, box_class, run_as_devin, enable_auto_lint
+):
     """Make sure that cd in bash also update the current working directory in ipython."""
 
     runtime = await _load_runtime(
-        temp_dir, box_class, enable_auto_lint=enable_auto_lint
+        temp_dir, box_class, run_as_devin, enable_auto_lint=enable_auto_lint
     )
     await _test_ipython_agentskills_fileop_pwd_impl(runtime, enable_auto_lint)
+
     await runtime.close()
     await asyncio.sleep(1)
 
 
-@pytest.mark.skipif(
-    TEST_RUNTIME.lower() == 'eventstream',
-    reason='Skip this if we want to test EventStreamRuntime',
-)
 @pytest.mark.skipif(
     os.environ.get('TEST_IN_CI', 'false').lower() == 'true',
     # FIXME: There's some weird issue with the CI environment.
@@ -978,18 +980,24 @@ async def test_ipython_agentskills_fileop_pwd(temp_dir, box_class, enable_auto_l
 )
 @pytest.mark.asyncio
 async def test_ipython_agentskills_fileop_pwd_agnostic_sandbox(
-    temp_dir, enable_auto_lint, container_image
+    temp_dir, box_class, run_as_devin, enable_auto_lint, container_image
 ):
-    """Make sure that cd in bash also update the current working directory in ipython."""
+    """Make sure that cd in bash also updates the current working directory in iPython."""
+
+    # NOTE: we only test for ServerRuntime, since EventStreamRuntime
+    # is image agnostic by design.
+    if box_class != 'server':
+        pytest.skip('Skip this if box_class is not server')
 
     runtime = await _load_runtime(
         temp_dir,
-        # NOTE: we only test for ServerRuntime, since EventStreamRuntime is image agnostic by design.
-        ServerRuntime,
+        box_class,
+        run_as_devin,
         enable_auto_lint=enable_auto_lint,
         container_image=container_image,
     )
     await _test_ipython_agentskills_fileop_pwd_impl(runtime, enable_auto_lint)
+
     await runtime.close()
     await asyncio.sleep(1)
 
@@ -1082,6 +1090,9 @@ async def test_copy_single_file(temp_dir, box_class):
     assert obs.exit_code == 0
     assert 'Hello, World!' in obs.content
 
+    await runtime.close()
+    await asyncio.sleep(1)
+
 
 def _create_test_dir_with_files(host_temp_dir):
     os.mkdir(os.path.join(host_temp_dir, 'test_dir'))
@@ -1129,6 +1140,9 @@ async def test_copy_directory_recursively(temp_dir, box_class):
     assert obs.exit_code == 0
     assert 'File 1 content' in obs.content
 
+    await runtime.close()
+    await asyncio.sleep(1)
+
 
 @pytest.mark.asyncio
 async def test_copy_to_non_existent_directory(temp_dir, box_class):
@@ -1147,6 +1161,9 @@ async def test_copy_to_non_existent_directory(temp_dir, box_class):
     assert isinstance(obs, CmdOutputObservation)
     assert obs.exit_code == 0
     assert 'Hello, World!' in obs.content
+
+    await runtime.close()
+    await asyncio.sleep(1)
 
 
 @pytest.mark.asyncio
@@ -1183,6 +1200,9 @@ async def test_overwrite_existing_file(temp_dir, box_class):
     assert obs.exit_code == 0
     assert 'Hello, World!' in obs.content
 
+    await runtime.close()
+    await asyncio.sleep(1)
+
 
 @pytest.mark.asyncio
 async def test_copy_non_existent_file(temp_dir, box_class):
@@ -1200,3 +1220,6 @@ async def test_copy_non_existent_file(temp_dir, box_class):
     logger.info(obs, extra={'msg_type': 'OBSERVATION'})
     assert isinstance(obs, CmdOutputObservation)
     assert obs.exit_code != 0  # File should not exist
+
+    await runtime.close()
+    await asyncio.sleep(1)
